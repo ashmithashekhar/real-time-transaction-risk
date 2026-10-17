@@ -1,55 +1,65 @@
-"""API tests using FastAPI's TestClient against a temp SQLite database."""
+"""Smoke tests for the FastAPI scoring service."""
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app import models
-from app.main import app
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
 
+from fastapi.testclient import TestClient  # noqa: E402
 
-@pytest.fixture(scope="module")
-def client(tmp_path_factory):
-    db_file = tmp_path_factory.mktemp("api") / "api.db"
-    models.init_db(f"sqlite:///{db_file}")
-    with TestClient(app) as test_client:
-        yield test_client
+from src.api import app  # noqa: E402
+
+client = TestClient(app)
 
 
-def test_health(client):
+def test_health():
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["scoring_mode"] in ("rules only", "hybrid (rules + model)")
 
 
-def test_merchants_seeded_on_startup(client):
-    resp = client.get("/merchants")
+def test_score_benign():
+    resp = client.post("/score", json={
+        "user_id": "U-API-1",
+        "timestamp": "2025-01-06T12:00:00Z",
+        "amount": 25.0,
+        "merchant_category": "groceries",
+        "payment_method": "chip",
+        "card_present": True,
+        "country": "US",
+        "home_country": "US",
+    })
     assert resp.status_code == 200
-    merchants = resp.json()
-    assert len(merchants) == 24
-    assert {"id", "name", "category", "region"} <= set(merchants[0])
+    assert resp.json()["decision"] == "approve"
 
 
-def test_analyze_and_fetch_report(client):
-    merchant_id = client.get("/merchants").json()[0]["id"]
-
-    resp = client.post(f"/merchants/{merchant_id}/analyze")
+def test_score_fraud_like():
+    resp = client.post("/score", json={
+        "user_id": "U-API-2",
+        "timestamp": "2025-01-06T02:30:00Z",
+        "amount": 3200.0,
+        "merchant_category": "gift_cards",
+        "payment_method": "online",
+        "card_present": False,
+        "is_new_device": True,
+        "country": "GB",
+        "home_country": "US",
+        "distance_from_home_km": 5600.0,
+        "velocity_1h_count": 6,
+        "velocity_1h_amount": 9400.0,
+    })
     assert resp.status_code == 200
-    report = resp.json()
-    assert report["merchant_id"] == merchant_id
-    assert report["risk_level"] in {"low", "moderate", "high", "critical"}
-    assert report["summary"]
-    assert "profile" in report["findings"]
-
-    fetched = client.get(f"/reports/{report['id']}")
-    assert fetched.status_code == 200
-    assert fetched.json()["id"] == report["id"]
-
-    listed = client.get(f"/merchants/{merchant_id}/reports")
-    assert listed.status_code == 200
-    assert any(r["id"] == report["id"] for r in listed.json())
+    body = resp.json()
+    assert body["decision"] == "block"
+    assert len(body["signals"]) >= 5
 
 
-def test_not_found_paths(client):
-    assert client.get("/merchants/999999").status_code == 404
-    assert client.post("/merchants/999999/analyze").status_code == 404
-    assert client.get("/reports/999999").status_code == 404
+def test_score_rejects_nonpositive_amount():
+    resp = client.post("/score", json={
+        "user_id": "U-API-3",
+        "timestamp": "2025-01-06T12:00:00Z",
+        "amount": -5.0,
+    })
+    assert resp.status_code == 422
