@@ -1,0 +1,27 @@
+# Optional PostgreSQL for the platform. The app runs fine on SQLite
+# without Docker; use this only if you want the Postgres backend.
+#
+#   docker compose up -d
+#   DATABASE_URL=postgresql+psycopg://merchant:merchant@localhost:5432/merchant_intel \
+#     uvicorn app.main:app --reload
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: merchant-intel-db
+    environment:
+      POSTGRES_USER: merchant
+      POSTGRES_PASSWORD: merchant
+      POSTGRES_DB: merchant_intel
+    ports:
+      - "5432:5432"
+    volumes:
+      - merchant_intel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U merchant -d merchant_intel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  merchant_intel_pgdata:

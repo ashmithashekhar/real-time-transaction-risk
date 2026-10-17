@@ -1,0 +1,21 @@
+# Core
+numpy>=1.26
+pandas>=2.0
+scikit-learn>=1.3
+joblib>=1.3
+
+# API service
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+
+# Kafka client (producer / consumer)
+kafka-python>=2.0.2
+
+# Development / tests
+pytest>=8.0
+httpx>=0.27
+
+# Optional: Spark Structured Streaming job (src/spark_streaming_job.py)
+# Heavyweight and needs a JDK (11/17) — install only if you want it:
+# pyspark>=3.5
