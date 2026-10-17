@@ -1,27 +1,35 @@
-# Optional PostgreSQL for the platform. The app runs fine on SQLite
-# without Docker; use this only if you want the Postgres backend.
+# Local Kafka broker for the transaction risk platform.
 #
-#   docker compose up -d
-#   DATABASE_URL=postgresql+psycopg://merchant:merchant@localhost:5432/merchant_intel \
-#     uvicorn app.main:app --reload
+# Single-node Kafka running in KRaft mode (no Zookeeper needed).
+#
+#   docker compose up -d        # start broker on localhost:9092
+#   docker compose down         # stop
+#   docker compose down -v      # stop and wipe broker data
+#
+# The 'transactions' topic is created automatically on first produce
+# (auto-create is enabled by default in this dev setup).
 
 services:
-  db:
-    image: postgres:16-alpine
-    container_name: merchant-intel-db
-    environment:
-      POSTGRES_USER: merchant
-      POSTGRES_PASSWORD: merchant
-      POSTGRES_DB: merchant_intel
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: risk-kafka
     ports:
-      - "5432:5432"
-    volumes:
-      - merchant_intel_pgdata:/var/lib/postgresql/data
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U merchant -d merchant_intel"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-volumes:
-  merchant_intel_pgdata:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
